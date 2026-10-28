@@ -69,6 +69,16 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean
 
+      # Bundle the JavaScript first: errors here are much clearer than inside Gradle
+      - name: Check JavaScript bundle
+        run: |
+          set -o pipefail
+          npx expo export --platform android --output-dir /tmp/js-check 2>&1 | tee bundle.log || {
+            grep -iE "Unable to resolve|SyntaxError|Error:|TypeError|Cannot find|not exist|failed" bundle.log | head -12 | while IFS= read -r l; do echo "::error title=JS bundle::${l:0:900}"; done
+            echo "::error title=JS bundle tail::$(tail -25 bundle.log | sed ':a;N;$!ba;s/\n/%0A/g' | cut -c1-3800)"
+            exit 1
+          }
+
       - name: Build release APK
         working-directory: android
         run: |
