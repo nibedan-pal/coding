@@ -71,7 +71,19 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee ../gradle.log
+
+      # Surface the real Gradle error in the run summary (annotations)
+      - name: Report build error
+        if: failure()
+        run: |
+          [ -f gradle.log ] || exit 0
+          awk '/What went wrong/{p=1} /\* Try:/{p=0} p' gradle.log | head -30 > err.txt
+          [ -s err.txt ] || grep -iE "error|exception|failed" gradle.log | head -30 > err.txt
+          echo "::error title=Gradle failed::$(sed ':a;N;$!ba;s/\n/%0A/g' err.txt | cut -c1-3800)"
+          grep -E "^e: |error: |Could not |Execution failed" gradle.log | sort -u | head -8 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
 
       - name: Name the APK
         run: |
