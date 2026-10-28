@@ -1,0 +1,110 @@
+name: Build APKs
+
+# Builds the three Android apps (customer, partner, rider) and publishes
+# them as a GitHub Release so they can be downloaded straight to a phone.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [customer, partner, rider]
+    env:
+      APP_VARIANT: ${{ matrix.variant }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      # Firebase config for push notifications: either commit google-services.json
+      # to the repo, or store its contents in the GOOGLE_SERVICES_JSON secret.
+      - name: Add Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ ! -f google-services.json ] && [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > google-services.json
+          fi
+          if [ -f google-services.json ]; then echo "Push notifications: ON"; else echo "::warning::No google-services.json, building without push notifications"; fi
+
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+
+      - name: Align package versions with Expo
+        run: npx expo install --fix
+
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Name the APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/LocalKart-${{ matrix.variant }}.apk"
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.variant }}
+          path: out/*.apk
+          retention-days: 14
+
+  release:
+    name: Publish test build
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: apks
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: LocalKart test build ${{ github.run_number }}
+          prerelease: true
+          files: apks/*.apk
+          body: |
+            Test build ${{ github.run_number }} from commit ${{ github.sha }}.
+
+            Download on your Android phone and install:
+            - **LocalKart-customer.apk**: customer app
+            - **LocalKart-partner.apk**: shop owner app
+            - **LocalKart-rider.apk**: delivery rider app
+
+            Android will ask to allow installing from your browser the first time.

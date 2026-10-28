@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+android/
+ios/
+dist/
+out/
+*.log
+.DS_Store
+# Never commit the Firebase service account key (google-services.json is fine)
+*firebase-adminsdk*.json
+service-account*.json
