@@ -4,7 +4,7 @@ name: Build APKs
 # them as a GitHub Release so they can be downloaded straight to a phone.
 on:
   push:
-    branches: [main]
+    branches: [main, localkart]
   workflow_dispatch:
 
 permissions:
